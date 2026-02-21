@@ -20,15 +20,8 @@ import {
   Key,
   Languages
 } from 'lucide-react';
-import { analyzeThought, generateDailyFocus, validateApiKey, LuminaInsight } from './services/geminiService';
-
-interface Entry {
-  id: number;
-  content: string;
-  type: string;
-  created_at: string;
-  metadata: LuminaInsight;
-}
+import { analyzeThought, generateDailyFocus, validateApiKey } from './services/geminiService';
+import { getAllEntries, addEntry, deleteEntry as removeEntry, type Entry } from './services/thoughtService';
 
 const TRANSLATIONS = {
   fr: {
@@ -88,7 +81,7 @@ const TRANSLATIONS = {
 };
 
 export default function App() {
-  const [entries, setEntries] = useState<Entry[]>([]);
+  const [entries, setEntries] = useState<Entry[]>(() => getAllEntries());
   const [input, setInput] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [lang, setLang] = useState<'fr' | 'en'>(() => (localStorage.getItem('lumina_lang') as 'fr' | 'en') || 'fr');
@@ -101,10 +94,6 @@ export default function App() {
   const [validationStatus, setValidationStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   const t = TRANSLATIONS[lang];
-
-  useEffect(() => {
-    fetchEntries();
-  }, []);
 
   useEffect(() => {
     if (entries.length > 0) {
@@ -139,10 +128,8 @@ export default function App() {
     setShowSettings(false);
   };
 
-  const fetchEntries = async () => {
-    const res = await fetch('/api/entries');
-    const data = await res.json();
-    setEntries(data);
+  const refreshEntries = () => {
+    setEntries(getAllEntries());
   };
 
   const updateDailyFocus = async () => {
@@ -163,17 +150,9 @@ export default function App() {
     setIsAnalyzing(true);
     try {
       const insight = await analyzeThought(input, userApiKey, lang);
-      await fetch('/api/entries', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: input,
-          type: 'thought',
-          metadata: insight
-        })
-      });
+      addEntry(input, 'thought', insight);
       setInput('');
-      fetchEntries();
+      refreshEntries();
     } catch (error) {
       console.error('Échec du traitement de la pensée :', error);
       alert(t.errorProcess);
@@ -182,9 +161,9 @@ export default function App() {
     }
   };
 
-  const deleteEntry = async (id: number) => {
-    await fetch(`/api/entries/${id}`, { method: 'DELETE' });
-    fetchEntries();
+  const handleDeleteEntry = (id: number) => {
+    removeEntry(id);
+    refreshEntries();
   };
 
   return (
@@ -362,7 +341,7 @@ export default function App() {
                       className="glass p-6 rounded-2xl card-shadow group relative"
                     >
                       <button 
-                        onClick={() => deleteEntry(entry.id)}
+                        onClick={() => handleDeleteEntry(entry.id)}
                         className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity text-ink/20 hover:text-red-500"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -447,7 +426,7 @@ export default function App() {
                       <div className="flex items-center gap-4">
                         <span className="text-[10px] font-mono text-ink/20">{new Date(entry.created_at).toLocaleTimeString()}</span>
                         <button 
-                          onClick={() => deleteEntry(entry.id)}
+                          onClick={() => handleDeleteEntry(entry.id)}
                           className="opacity-0 group-hover:opacity-100 text-ink/20 hover:text-red-500 transition-all"
                         >
                           <Trash2 className="w-4 h-4" />
