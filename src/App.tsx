@@ -18,7 +18,10 @@ import {
   Settings,
   X,
   Key,
-  Languages
+  Languages,
+  Search,
+  Download,
+  Ghost
 } from 'lucide-react';
 import { analyzeThought, generateDailyFocus, validateApiKey, LuminaInsight } from './services/geminiService';
 
@@ -56,7 +59,11 @@ const TRANSLATIONS = {
     validating: "Validation...",
     invalidKey: "Clé API invalide. Veuillez vérifier.",
     validKey: "Clé API valide !",
-    testKey: "Tester la clé"
+    testKey: "Tester la clé",
+    search: "Rechercher dans vos pensées...",
+    export: "Exporter mes données",
+    noResults: "Aucune pensée trouvée.",
+    emptyState: "Commencez par vider votre sac pour voir des analyses ici."
   },
   en: {
     dashboard: "Dashboard",
@@ -83,12 +90,27 @@ const TRANSLATIONS = {
     validating: "Validating...",
     invalidKey: "Invalid API Key. Please check.",
     validKey: "Valid API Key!",
-    testKey: "Test Key"
+    testKey: "Test Key",
+    search: "Search your thoughts...",
+    export: "Export my data",
+    noResults: "No thoughts found.",
+    emptyState: "Start by dumping your brain to see insights here."
   }
+};
+
+// Simple unique ID generator for user isolation
+const getUserId = () => {
+  let id = localStorage.getItem('lumina_user_id');
+  if (!id) {
+    id = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    localStorage.setItem('lumina_user_id', id);
+  }
+  return id;
 };
 
 export default function App() {
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [input, setInput] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [lang, setLang] = useState<'fr' | 'en'>(() => (localStorage.getItem('lumina_lang') as 'fr' | 'en') || 'fr');
@@ -101,6 +123,7 @@ export default function App() {
   const [validationStatus, setValidationStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   const t = TRANSLATIONS[lang];
+  const userId = getUserId();
 
   useEffect(() => {
     fetchEntries();
@@ -109,6 +132,8 @@ export default function App() {
   useEffect(() => {
     if (entries.length > 0) {
       updateDailyFocus();
+    } else {
+      setDailyFocus(t.emptyState);
     }
   }, [entries, userApiKey, lang]);
 
@@ -119,15 +144,18 @@ export default function App() {
   };
 
   const handleTestKey = async () => {
-    if (!tempApiKey.trim()) return;
+    const cleanKey = tempApiKey.trim();
+    if (!cleanKey) return;
     setIsValidating(true);
     setValidationStatus('idle');
-    const isValid = await validateApiKey(tempApiKey);
+    const isValid = await validateApiKey(cleanKey);
     setIsValidating(false);
-    setValidationStatus(isValid ? 'success' : 'error');
     if (isValid) {
-      setUserApiKey(tempApiKey);
-      localStorage.setItem('lumina_api_key', tempApiKey);
+      setValidationStatus('success');
+      setUserApiKey(cleanKey);
+      localStorage.setItem('lumina_api_key', cleanKey);
+    } else {
+      setValidationStatus('error');
     }
   };
 
@@ -140,7 +168,7 @@ export default function App() {
   };
 
   const fetchEntries = async () => {
-    const res = await fetch('/api/entries');
+    const res = await fetch(`/api/entries?userId=${userId}`);
     const data = await res.json();
     setEntries(data);
   };
@@ -167,6 +195,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          userId,
           content: input,
           type: 'thought',
           metadata: insight
@@ -187,10 +216,26 @@ export default function App() {
     fetchEntries();
   };
 
+  const exportData = () => {
+    const dataStr = JSON.stringify(entries, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    const exportFileDefaultName = `lumina-export-${new Date().toISOString()}.json`;
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    linkElement.click();
+  };
+
+  const filteredEntries = entries.filter(e => 
+    e.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    e.metadata.summary.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    e.metadata.category.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <div className="flex min-h-screen bg-bg">
       {/* Sidebar */}
-      <nav className="w-64 border-r border-black/5 p-6 flex flex-col gap-8">
+      <nav className="w-64 border-r border-black/5 p-6 flex flex-col gap-8 sticky top-0 h-screen">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-accent font-bold text-xl">
             <Sparkles className="w-6 h-6" />
@@ -224,14 +269,21 @@ export default function App() {
 
         <div className="mt-auto space-y-4">
           <button 
+            onClick={exportData}
+            className="w-full flex items-center gap-3 px-4 py-2 rounded-xl text-ink/60 hover:bg-black/5 transition-all text-sm"
+          >
+            <Download className="w-4 h-4" />
+            {t.export}
+          </button>
+          <button 
             onClick={() => setShowSettings(true)}
-            className="w-full flex items-center gap-3 px-4 py-2 rounded-xl text-ink/60 hover:bg-black/5 transition-all"
+            className="w-full flex items-center gap-3 px-4 py-2 rounded-xl text-ink/60 hover:bg-black/5 transition-all text-sm"
           >
             <Settings className="w-4 h-4" />
             {t.settings}
           </button>
           <div className="p-4 rounded-2xl bg-black/5 text-xs text-ink/40">
-            <p>Lumina v1.2</p>
+            <p>Lumina v1.3</p>
             <p className="mt-1">{t.engine}</p>
             <p className="mt-2 flex items-center gap-1">
               <span className={`w-2 h-2 rounded-full ${userApiKey ? 'bg-accent' : 'bg-amber-400'}`}></span>
@@ -353,48 +405,68 @@ export default function App() {
 
               {/* Recent Insights Grid */}
               <section className="space-y-6">
-                <h2 className="text-xl font-medium">{t.recentInsights}</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {entries.slice(0, 4).map((entry) => (
-                    <motion.div 
-                      layout
-                      key={entry.id}
-                      className="glass p-6 rounded-2xl card-shadow group relative"
-                    >
-                      <button 
-                        onClick={() => deleteEntry(entry.id)}
-                        className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity text-ink/20 hover:text-red-500"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                      
-                      <div className="flex items-center gap-2 mb-4">
-                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full ${
-                          entry.metadata.priority === 'high' ? 'bg-red-100 text-red-600' : 
-                          entry.metadata.priority === 'medium' ? 'bg-amber-100 text-amber-600' : 
-                          'bg-emerald-100 text-emerald-600'
-                        }`}>
-                          {entry.metadata.category}
-                        </span>
-                        <span className="text-[10px] text-ink/30 font-mono">
-                          {new Date(entry.created_at).toLocaleDateString()}
-                        </span>
-                      </div>
-
-                      <p className="text-ink/80 mb-4 line-clamp-2 italic">"{entry.content}"</p>
-                      
-                      <div className="space-y-2">
-                        <p className="text-sm font-medium text-ink/60">{t.nextSteps}</p>
-                        {entry.metadata.nextSteps?.map((step, i) => (
-                          <div key={i} className="flex items-start gap-2 text-sm text-ink/50">
-                            <ChevronRight className="w-3 h-3 mt-1 text-accent" />
-                            {step}
-                          </div>
-                        ))}
-                      </div>
-                    </motion.div>
-                  ))}
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-medium">{t.recentInsights}</h2>
+                  <div className="relative w-64">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-ink/20" />
+                    <input 
+                      type="text"
+                      placeholder={t.search}
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 rounded-xl bg-black/5 border-transparent focus:bg-white focus:ring-2 focus:ring-accent/10 outline-none transition-all text-sm"
+                    />
+                  </div>
                 </div>
+
+                {filteredEntries.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-ink/20 gap-4">
+                    <Ghost className="w-12 h-12" />
+                    <p>{searchQuery ? t.noResults : t.emptyState}</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {filteredEntries.slice(0, 6).map((entry) => (
+                      <motion.div 
+                        layout
+                        key={entry.id}
+                        className="glass p-6 rounded-2xl card-shadow group relative"
+                      >
+                        <button 
+                          onClick={() => deleteEntry(entry.id)}
+                          className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity text-ink/20 hover:text-red-500"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                        
+                        <div className="flex items-center gap-2 mb-4">
+                          <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full ${
+                            entry.metadata.priority === 'high' ? 'bg-red-100 text-red-600' : 
+                            entry.metadata.priority === 'medium' ? 'bg-amber-100 text-amber-600' : 
+                            'bg-emerald-100 text-emerald-600'
+                          }`}>
+                            {entry.metadata.category}
+                          </span>
+                          <span className="text-[10px] text-ink/30 font-mono">
+                            {new Date(entry.created_at).toLocaleDateString()}
+                          </span>
+                        </div>
+
+                        <p className="text-ink/80 mb-4 line-clamp-2 italic">"{entry.content}"</p>
+                        
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium text-ink/60">{t.nextSteps}</p>
+                          {entry.metadata.nextSteps?.map((step, i) => (
+                            <div key={i} className="flex items-start gap-2 text-sm text-ink/50">
+                              <ChevronRight className="w-3 h-3 mt-1 text-accent" />
+                              {step}
+                            </div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
               </section>
             </motion.div>
           ) : (
@@ -461,7 +533,6 @@ export default function App() {
           )}
         </AnimatePresence>
       </main>
-
     </div>
   );
 }

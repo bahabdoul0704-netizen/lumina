@@ -8,7 +8,7 @@ export interface LuminaInsight {
 }
 
 function getAI(customKey?: string) {
-  const apiKey = customKey || process.env.GEMINI_API_KEY || "";
+  const apiKey = (customKey || process.env.GEMINI_API_KEY || "").trim();
   return new GoogleGenAI({ apiKey });
 }
 
@@ -23,7 +23,7 @@ export async function analyzeThought(text: string, customKey?: string, lang: 'fr
     : `Analyze this thought and extract structured insights: "${text}"`;
 
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-2.5-flash",
     contents: prompt,
     config: {
       systemInstruction,
@@ -54,7 +54,7 @@ export async function generateDailyFocus(context: string, customKey?: string, la
     : `Based on these recent thoughts: ${context}, what should be the primary focus for today? Keep it inspiring and under 30 words.`;
 
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-2.5-flash",
     contents: prompt,
   });
   
@@ -67,16 +67,17 @@ export async function generateDailyFocus(context: string, customKey?: string, la
 
 export async function validateApiKey(key: string): Promise<boolean> {
   try {
+    if (!key || key.length < 20) return false;
     const ai = new GoogleGenAI({ apiKey: key });
-    // Try a very simple, low-token call to verify the key
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: "hi",
+      model: "gemini-2.5-flash",
+      contents: "test",
       config: { maxOutputTokens: 1 }
     });
     return !!response.text;
-  } catch (error) {
-    console.error("API Key validation failed:", error);
+  } catch (error: any) {
+    console.error("Détails de l'erreur API Gemini :", error);
+    // Si l'erreur contient "API_KEY_INVALID", on est sûr que c'est la clé
     return false;
   }
 }

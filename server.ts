@@ -13,10 +13,11 @@ const db = new Database("lumina.db");
 db.exec(`
   CREATE TABLE IF NOT EXISTS entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
     content TEXT NOT NULL,
-    type TEXT NOT NULL, -- 'note', 'task', 'goal', 'insight'
+    type TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    metadata TEXT -- JSON string for Gemini-generated data
+    metadata TEXT
   )
 `);
 
@@ -28,15 +29,20 @@ async function startServer() {
 
   // API Routes
   app.get("/api/entries", (req, res) => {
-    const entries = db.prepare("SELECT * FROM entries ORDER BY created_at DESC").all();
+    const userId = req.query.userId;
+    if (!userId) return res.status(400).json({ error: "Missing userId" });
+    
+    const entries = db.prepare("SELECT * FROM entries WHERE user_id = ? ORDER BY created_at DESC").all(userId);
     res.json(entries.map(e => ({ ...e, metadata: JSON.parse(e.metadata || "{}") })));
   });
 
   app.post("/api/entries", (req, res) => {
-    const { content, type, metadata } = req.body;
+    const { userId, content, type, metadata } = req.body;
+    if (!userId) return res.status(400).json({ error: "Missing userId" });
+
     const info = db.prepare(
-      "INSERT INTO entries (content, type, metadata) VALUES (?, ?, ?)"
-    ).run(content, type, JSON.stringify(metadata || {}));
+      "INSERT INTO entries (user_id, content, type, metadata) VALUES (?, ?, ?, ?)"
+    ).run(userId, content, type, JSON.stringify(metadata || {}));
     res.json({ id: info.lastInsertRowid });
   });
 
